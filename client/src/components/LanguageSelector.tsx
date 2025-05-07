@@ -13,10 +13,14 @@ type LanguageOption = {
 
 const languageOptions: LanguageOption[] = [
   { value: "en", label: "English" },
-  { value: "de", label: "Deutsch" },
-  { value: "es", label: "Español" },
-  { value: "fr", label: "Français" },
-  { value: "it", label: "Italiano" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "it", label: "Italian" },
+  { value: "nl", label: "Dutch" },
+  { value: "pl", label: "Polish" },
+  { value: "pt", label: "Portugese" },
+  { value: "ru", label: "Russian" },
 ];
 
 export default function LanguageSelector({ currentLanguage, onLanguageChange }: LanguageSelectorProps) {

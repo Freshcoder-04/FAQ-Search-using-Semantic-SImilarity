@@ -1,61 +1,84 @@
-import fs from "fs/promises";
+// server/faqService.ts
+import fs from "fs";
 import path from "path";
-import { parse } from "csv-parse/sync";
+import { fileURLToPath } from "url";
+import csv from "csv-parser";
+import axios from "axios";
 import { Faq } from "@/types";
-import { executePythonSearch } from "./pythonSearch";
 
-// Cache FAQs by language to avoid reading files repeatedly
+// ——— define __dirname in ESM context ———
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// simple in-memory cache
 const faqCache: Record<string, Faq[]> = {};
 
+const PYTHON_URL = "http://localhost:8000";
+const PYTHON_SEARCH = "/search";
+
 /**
- * Read FAQs from a CSV file for a specific language
+ * Read FAQs from the CSV file for a specific language.
  */
 export async function getFaqsByLanguage(language: string): Promise<Faq[]> {
-  // Return from cache if available
-  if (faqCache[language]) {
-    return faqCache[language];
-  }
+  if (faqCache[language]) return faqCache[language];
 
-  try {
-    const filePath = path.join(process.cwd(), `data/mfaq_${language}.csv`);
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    
-    // Parse CSV content
-    const records = parse(fileContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true
-    });
-    
-    // Map CSV records to FAQ objects
-    const faqs = records.map((record: any) => ({
-      question: record.question || record.Question || "",
-      answer: record.answer || record.Answer || ""
-    }));
-    
-    // Cache the results
-    faqCache[language] = faqs;
-    
-    return faqs;
-  } catch (error) {
-    console.error(`Error reading FAQ file for language ${language}:`, error);
-    
-    // Return empty array if file doesn't exist or has errors
-    return [];
-  }
+  const faqs: Faq[] = [];
+  const fileName = `mfaq_${language}.csv`;
+  const filePath = path.join(__dirname, "data", fileName);
+
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(filePath)) {
+      return reject(new Error(`FAQ CSV not found: ${filePath}`));
+    }
+
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on("data", (row: Record<string, string>) => {
+        if (row.question && row.answer) {
+          faqs.push({
+            question: row.question,
+            answer:   row.answer
+          });
+        }
+      })
+      .on("end", () => {
+        faqCache[language] = faqs;
+        resolve(faqs);
+      })
+      .on("error", (err) => reject(err));
+  });
 }
 
 /**
- * Search FAQs using Python pipeline
+ * Query the Python service for the top-k FAQs.
  */
-export async function searchFaqs(query: string, language: string): Promise<Faq[]> {
+export async function searchFaqs(
+  query: string,
+  language: string,
+  top_k: number = 10
+): Promise<Faq[]> {
   try {
-    // Execute Python search pipeline and get results
-    const searchResults = await executePythonSearch(query, language);
-    
-    return searchResults;
-  } catch (error) {
-    console.error("Error executing search:", error);
-    throw error;
+    const resp = await axios.post(
+      PYTHON_URL + PYTHON_SEARCH,
+      { query, lang: language, top_k },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    // Python now returns { results: [ { question, answer, cross_score, cosine_score, … }, … ] }
+    const { results } = resp.data;
+    if (!Array.isArray(results)) {
+      console.error("Unexpected /search response shape:", resp.data);
+      return [];
+    }
+
+    // map into our Faq type (and carry over score if you like)
+    return results.map((r: any) => ({
+      question: r.question,
+      answer: r.answer,
+      score: r.cross_score,   // optional field on Faq
+    }));
+  } catch (err) {
+    console.error("Error querying Python semantic engine:", err);
+    return [];
   }
 }

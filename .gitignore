@@ -1,2 +1,4 @@
 ./*/*.DS_STORE
 node_modules/
+xlmroberta_sts_finetuned/
+*/__pycache__

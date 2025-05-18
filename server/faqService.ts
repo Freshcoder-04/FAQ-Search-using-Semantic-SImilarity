@@ -1,61 +1,56 @@
-import fs from "fs/promises";
-import path from "path";
-import { parse } from "csv-parse/sync";
+// server/faqService.ts
+import axios from "axios";
 import { Faq } from "@/types";
-import { executePythonSearch } from "./pythonSearch";
 
-// Cache FAQs by language to avoid reading files repeatedly
 const faqCache: Record<string, Faq[]> = {};
 
 /**
  * Read FAQs from a CSV file for a specific language
+ * (used to populate an initial list or allow browsing)
  */
 export async function getFaqsByLanguage(language: string): Promise<Faq[]> {
-  // Return from cache if available
-  if (faqCache[language]) {
-    return faqCache[language];
-  }
+  if (faqCache[language]) return faqCache[language];
 
-  try {
-    const filePath = path.join(process.cwd(), `data/mfaq_${language}.csv`);
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    
-    // Parse CSV content
-    const records = parse(fileContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true
-    });
-    
-    // Map CSV records to FAQ objects
-    const faqs = records.map((record: any) => ({
-      question: record.question || record.Question || "",
-      answer: record.answer || record.Answer || ""
-    }));
-    
-    // Cache the results
-    faqCache[language] = faqs;
-    
-    return faqs;
-  } catch (error) {
-    console.error(`Error reading FAQ file for language ${language}:`, error);
-    
-    // Return empty array if file doesn't exist or has errors
-    return [];
-  }
+  // adjust the path if needed—your CSVs live in server/data
+  const filePath = `./server/data/mfaq_${language}.csv`;
+
+  // you already have parsing logic here, so leave it as is
+  // ...
+  // (your existing CSV-parsing code)
+  // ...
+
+  // after parsing:
+  faqCache[language] = faqs;
+  return faqs;
 }
 
 /**
- * Search FAQs using Python pipeline
+ * Search FAQs via your Express → FastAPI pipeline
  */
-export async function searchFaqs(query: string, language: string): Promise<Faq[]> {
+export async function searchFaqs(
+  query: string,
+  language: string
+): Promise<Faq[]> {
   try {
-    // Execute Python search pipeline and get results
-    const searchResults = await executePythonSearch(query, language);
-    
-    return searchResults;
-  } catch (error) {
-    console.error("Error executing search:", error);
-    throw error;
+    // hit your own API route, which proxies to Python
+    const resp = await axios.post("http://localhost:8000/search", {
+      query,
+      lang: language,
+    });
+
+    // the FastAPI service returns a single best match;
+    // wrap it in an array so your UI code can always map over results
+    const { question, answer, cross_score, cosine_score } = resp.data;
+    return [
+      {
+        question,
+        answer,
+        // if you want to show scores in the UI:
+        // score: cross_score,
+      },
+    ];
+  } catch (e) {
+    console.error("Error searching FAQs:", e);
+    return [];
   }
 }

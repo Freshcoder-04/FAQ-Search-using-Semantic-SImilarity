@@ -29,8 +29,12 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await fetch(`/api/search?query=${encodeURIComponent(query)}&language=${currentLanguage}`);
-      
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, lang: currentLanguage }),
+      });
+
       if (!response.ok) {
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
